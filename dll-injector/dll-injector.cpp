@@ -1,20 +1,77 @@
-// dll-injector.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <iostream>
+#include <Windows.h>
+#include <string>
+#include <thread>
+#include <libloaderapi.h>
+
+using namespace std;
+
+void get_proc_id(const char* window_title, DWORD &process_id)
+{
+	GetWindowThreadProcessId(FindWindow(NULL, window_title), &process_id);
+}
+
+void error(const char* error_title, const char* error_message)
+{
+	MessageBox(NULL, error_message, error_title, NULL);
+	exit(-1);
+}
+
+bool file_exists(string file_name)
+{
+	struct stat buffer;
+	return (stat(file_name.c_str(), &buffer) == 0);
+}
 
 int main()
 {
-    std::cout << "Hello World!\n";
+	DWORD proc_id = NULL;
+	char dll_path[MAX_PATH];
+	const char* dll_name = "";
+	const char* window_title = "";
+
+	if (!file_exists(dll_name))
+	{
+		error("file_exists", "File doesn't exist.");
+	}
+
+	if (!GetFullPathName(dll_name, MAX_PATH, dll_path, nullptr))
+	{
+		error("GetFullPathName", "Failed to get full path.");
+	}
+
+	get_proc_id(window_title, proc_id);
+	if (proc_id == NULL)
+	{
+		error("get_proc_id", "Failed to get process ID.");
+	}
+
+	HANDLE h_process = OpenProcess(PROCESS_ALL_ACCESS, NULL, proc_id);
+	if (!h_process)
+	{
+		error("OpenProcess", "Failed to open a handle to process");
+	}
+
+	void* allocated_memory = VirtualAllocEx(h_process, nullptr, MAX_PATH, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	if (!allocated_memory)
+	{
+		error("VirtualAllocEx", "Failed to allocate memory");
+	}
+
+	if (!WriteProcessMemory(h_process, allocated_memory, dll_path, MAX_PATH, nullptr))
+	{
+		error("WriteProcessMemory", "Failed to write process memory");
+	}
+
+	HANDLE h_thread = CreateRemoteThread(h_process, nullptr, NULL, LPTHREAD_START_ROUTINE(LoadLibraryA), allocated_memory, NULL, nullptr);
+	if (!h_thread)
+	{
+		error("CreateRemoteThread", "Failed to create remote thread.");
+	}
+
+	CloseHandle(h_process);
+	VirtualFreeEx(h_process, allocated_memory, NULL, MEM_RELEASE);
+	MessageBox(0, "success injected.", "Success", 0);
 }
 
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
 
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
